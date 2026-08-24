@@ -30,7 +30,14 @@ button{font:inherit;cursor:pointer}.secondary{background:#eee!important;color:#2
 .wordrow .en{font-weight:700}.tag{font-size:11px;color:#777}
 @media(max-width:500px){.q{font-size:27px}}
 </style>
-</head>
+<style>
+.flash-card{min-height:430px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.flash-word{font-size:clamp(42px,7vw,78px);font-weight:800;margin:18px 0 10px}
+.flash-meaning{font-size:clamp(20px,3vw,30px);margin-bottom:10px}
+.flash-ipa{font-size:clamp(16px,2vw,22px);color:#666;margin-bottom:24px}
+.flash-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px}
+.flash-status{font-size:12px;color:#777;margin-top:12px}
+</style></head>
 <body>
 <div class="wrap">
   <div id="app"></div>
@@ -114,7 +121,7 @@ function menu(){
  clearInterval(timer);
  app.innerHTML=`<h1>準1級 Vocabulary Master</h1><div class="sub">${VOCAB.length}語・4セクション総合 ＋ 難単語80語</div>
  <div class="menu">
- <button onclick="startPractice()">練習モード</button>
+ <button onclick="startPractice()">練習モード</button><button onclick="startFlashMode()">👁️ 単語フラッシュモード <span class="small">（3秒）</span></button>
  <button onclick="startHardPractice()">🧠 難単語モード <span class="small">（Part 3・80語）</span></button>
  <button onclick="startTest()">テストモード</button>
  <button onclick="checkWords()">要チェックワード集</button>
@@ -148,8 +155,42 @@ function answerHardPractice(i){
  document.getElementById("fb").textContent=ok?"○ 正解！":"× 正解： "+current.correct.ja;setTimeout(()=>{pos++;nextHardPractice()},550);
 }
 function toggleHardCheck(en){let key="hard:"+en,i=checked.indexOf(key);if(i>=0)checked.splice(i,1);else checked.push(key);save();if(mode==="hard")renderHardPractice();}
-function startPractice(){
- mode="practice"; queue=shuffle(VOCAB);pos=0;score=0;answered=0;nextPractice();
+
+let flashTimer=null,flashQueue=[],flashPos=0,flashSeconds=3,flashRunning=true,flashAutoSpeak=true;
+function allFlashWords(){
+ const a=(typeof VOCAB!=="undefined"?VOCAB:[]).slice(),b=(typeof HARD_VOCAB!=="undefined"?HARD_VOCAB:[]).slice();
+ const s=new Set(),r=[];[...a,...b].forEach(x=>{if(x&&!s.has(x.en)){s.add(x.en);r.push(x)}});return r;
+}
+function startFlashMode(){mode="flash";clearTimeout(flashTimer);flashQueue=shuffle(allFlashWords());flashPos=0;flashSeconds=3;flashRunning=true;renderFlash();scheduleFlash()}
+function scheduleFlash(){clearTimeout(flashTimer);if(flashRunning)flashTimer=setTimeout(flashNext,flashSeconds*1000)}
+function flashNext(){clearTimeout(flashTimer);flashPos++;if(flashPos>=flashQueue.length){flashQueue=shuffle(allFlashWords());flashPos=0}renderFlash();scheduleFlash()}
+function renderFlash(){
+ const x=flashQueue[flashPos],ipa=(typeof HARD_IPA!=="undefined"?HARD_IPA[x.en]:"")||"",ck=checked.includes(x.en)||checked.includes("hard:"+x.en);
+ app.innerHTML=`<div class="top"><button class="secondary" onclick="stopFlash();menu()">← メニュー</button><span class="small">${flashPos+1}/${flashQueue.length}</span></div>
+ <div class="card flash-card"><div class="tag">${flashSeconds}秒ごとに自動切替</div><div class="flash-word">${esc(x.en)}</div><div class="flash-meaning">${esc(x.ja)}</div><div class="flash-ipa">${esc(ipa)}</div>
+ <div class="flash-controls"><button onclick="speakFlash()">🔊 発音</button><button onclick="toggleAutoSpeak()">${flashAutoSpeak?"🔊 自動読み上げON":"🔇 自動読み上げOFF"}</button><button onclick="toggleFlashPause()">${flashRunning?"⏸ 一時停止":"▶ 再開"}</button><button onclick="flashNext()">次へ →</button><button class="star ${ck?"checked":""}" onclick="toggleFlashCheck('${x.en}')">${ck?"★":"☆"}</button></div>
+ <div class="flash-controls"><button onclick="setFlashSeconds(3)">3秒</button><button onclick="setFlashSeconds(5)">5秒</button><button onclick="setFlashSeconds(10)">10秒</button></div>
+ <div class="flash-status">5セクションを一周するまで重複なし。終わると再シャッフル。</div></div>`;
+}
+function toggleAutoSpeak(){
+ flashAutoSpeak=!flashAutoSpeak;
+ if(!flashAutoSpeak && "speechSynthesis" in window) speechSynthesis.cancel();
+ renderFlash();
+ if(flashAutoSpeak) setTimeout(speakFlash,100);
+}
+function representativeMeaning(ja){
+ return String(ja||"").split(/[、，,／\/・]/)[0].replace(/[（(].*?[）)]/g,"").trim();
+}
+function speakFlash(){
+ const x=flashQueue[flashPos];
+ if(!x || !("speechSynthesis" in window))return;
+ speechSynthesis.cancel();
+ const en=new SpeechSynthesisUtterance(x.en);
+ en.lang="en-US"; en.rate=.85;
+ const ja=new SpeechSynthesisUtterance(representativeMeaning(x.ja));
+ ja.lang="ja-JP"; ja.rate=1.0;
+ en.onend=()=>speechSynthesis.speak(ja);
+ speechSynthesis.speak(en);
 }
 function nextPractice(){
  if(pos>=queue.length){queue=shuffle(VOCAB);pos=0;}
