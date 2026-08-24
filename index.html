@@ -165,27 +165,18 @@ function startFlashMode(){mode="flash";clearTimeout(flashTimer);flashQueue=shuff
 function scheduleFlash(){clearTimeout(flashTimer);if(flashRunning)flashTimer=setTimeout(flashNext,flashSeconds*1000)}
 function flashNext(){clearTimeout(flashTimer);flashPos++;if(flashPos>=flashQueue.length){flashQueue=shuffle(allFlashWords());flashPos=0}renderFlash();scheduleFlash()}
 function renderFlash(){
- const x=flashQueue[flashPos];
- const ipa=(typeof HARD_IPA!=="undefined"?HARD_IPA[x.en]:"")||"";
- const ck=checked.includes(x.en)||checked.includes("hard:"+x.en);
+ const x=flashQueue[flashPos],ipa=(typeof HARD_IPA!=="undefined"?HARD_IPA[x.en]:"")||"",ck=checked.includes(x.en)||checked.includes("hard:"+x.en);
  app.innerHTML=`<div class="top"><button class="secondary" onclick="stopFlash();menu()">← メニュー</button><span class="small">${flashPos+1}/${flashQueue.length}</span></div>
- <div class="card flash-card"><div class="tag">${flashSeconds}秒ごとに自動切替</div>
- <div class="flash-word">${esc(x.en)}</div><div class="flash-meaning">${esc(x.ja)}</div><div class="flash-ipa">${esc(ipa)}</div>
- <div class="flash-controls">
- <button onclick="speakFlash()">🔊 発音</button>
- <button onclick="toggleAutoSpeak()">${flashAutoSpeak?"🔊 自動読み上げON":"🔇 自動読み上げOFF"}</button>
- <button onclick="toggleFlashPause()">${flashRunning?"⏸ 一時停止":"▶ 再開"}</button>
- <button onclick="flashNext()">次へ →</button>
- <button class="star ${ck?"checked":""}" onclick="toggleFlashCheck('${x.en}')">${ck?"★":"☆"}</button>
- </div>
+ <div class="card flash-card"><div class="tag">${flashSeconds}秒ごとに自動切替</div><div class="flash-word">${esc(x.en)}</div><div class="flash-meaning">${esc(x.ja)}</div><div class="flash-ipa">${esc(ipa)}</div>
+ <div class="flash-controls"><button onclick="speakFlash()">🔊 発音</button><button onclick="toggleAutoSpeak()">${flashAutoSpeak?"🔊 自動読み上げON":"🔇 自動読み上げOFF"}</button><button onclick="toggleFlashPause()">${flashRunning?"⏸ 一時停止":"▶ 再開"}</button><button onclick="flashNext()">次へ →</button><button class="star ${ck?"checked":""}" onclick="toggleFlashCheck('${x.en}')">${ck?"★":"☆"}</button></div>
  <div class="flash-controls"><button onclick="setFlashSeconds(3)">3秒</button><button onclick="setFlashSeconds(5)">5秒</button><button onclick="setFlashSeconds(10)">10秒</button></div>
  <div class="flash-status">5セクションを一周するまで重複なし。終わると再シャッフル。</div></div>`;
- if(flashAutoSpeak) setTimeout(()=>speakFlash(),180);
 }
 function toggleAutoSpeak(){
  flashAutoSpeak=!flashAutoSpeak;
  if(!flashAutoSpeak && "speechSynthesis" in window) speechSynthesis.cancel();
  renderFlash();
+ if(flashAutoSpeak) setTimeout(speakFlash,100);
 }
 function representativeMeaning(ja){
  return String(ja||"").split(/[、，,／\/・]/)[0].replace(/[（(].*?[）)]/g,"").trim();
@@ -195,12 +186,90 @@ function speakFlash(){
  if(!x || !("speechSynthesis" in window))return;
  speechSynthesis.cancel();
  const en=new SpeechSynthesisUtterance(x.en);
- en.lang="en-US";
- en.rate=.85;
+ en.lang="en-US"; en.rate=.85;
  const ja=new SpeechSynthesisUtterance(representativeMeaning(x.ja));
- ja.lang="ja-JP";
- ja.rate=1.0;
+ ja.lang="ja-JP"; ja.rate=1.0;
  en.onend=()=>speechSynthesis.speak(ja);
  speechSynthesis.speak(en);
 }
->
+function nextPractice(){
+ if(pos>=queue.length){queue=shuffle(VOCAB);pos=0;}
+ current=makeQuestion();locked=false;renderPractice();
+}
+function renderPractice(){
+ let c=current.correct;
+ let pct=Math.round((pos/queue.length)*100);
+ let isChecked=checked.includes(c.en);
+ let face=previousResult===true?"🥳":previousResult===false?"😢":"🤖";
+ let info=previousQuestion?wordInfo(previousQuestion):null;
+ let coachText=info
+   ? `<div><b>${esc(previousQuestion)}</b></div><div>意味：${esc(info.meaning)}</div><div>IPA：${esc(info.ipa)}</div>${info.etymology?`<div>語源：${esc(info.etymology)}</div>`:""}`
+   : "一個前の問題の意味・IPAをここで確認！語源は載っている単語だけ表示するよ。";
+ app.innerHTML=`<div class="top"><button class="secondary" onclick="menu()">← メニュー</button><span class="small">正答率 ${answered?Math.round(score/answered*100):100}%</span></div>
+ <div class="card"><div class="top"><span class="tag">${pos+1}/${queue.length}</span>
+ <button class="star ${isChecked?"checked":""}" onclick="toggleCheck('${c.en}')" title="要チェック">${isChecked?"★":"☆"}</button></div>
+ <div class="practice-progress"><div class="small">この周の進み具合　${pos}/${queue.length}</div>
+ <div class="progress"><div class="bar" style="width:${pct}%"></div></div></div>
+ <div class="q">${esc(c.en)}</div>
+ <div class="opts">${current.opts.map((o,i)=>`<button class="opt" onclick="answerPractice(${i})">${esc(o.ja)}</button>`).join("")}</div>
+ <div id="fb" class="feedback"></div>
+ <div class="coach"><div class="coach-face">${face}</div><div class="coach-text">${coachText}</div></div>
+ </div>`;
+}
+function answerPractice(i){
+ if(locked)return;
+ locked=true;
+ answered++;
+ let ok=current.opts[i].en===current.correct.en;
+ if(ok)score++;
+ else if(!historyWrong.includes(current.correct.en))historyWrong.push(current.correct.en);
+ previousQuestion=current.correct.en;
+ previousResult=ok;
+ save();
+ document.querySelectorAll(".opt").forEach((b,j)=>{b.disabled=true;if(current.opts[j].en===current.correct.en)b.classList.add("correct");if(j===i&&!ok)b.classList.add("wrong")});
+ document.getElementById("fb").textContent=ok?"○ 正解！":"× 正解： "+current.correct.ja;
+ setTimeout(()=>{pos++;nextPractice()},550);
+}
+function toggleCheck(en){
+ let i=checked.indexOf(en);
+ if(i>=0) checked.splice(i,1); else checked.push(en);
+ save();
+ if(mode==="practice") renderPractice();
+}
+function startTest(){
+ mode="test";queue=shuffle(VOCAB).slice(0,30);pos=0;score=0;answered=0;testNext();
+}
+function testNext(){
+ if(pos>=30){testResult();return}
+ current=makeQuestion();locked=false;renderTest();let left=5;
+ document.getElementById("timer").textContent=left;
+ clearInterval(timer);timer=setInterval(()=>{left--;document.getElementById("timer").textContent=left;if(left<=0){clearInterval(timer);answerTest(-1)}},1000);
+}
+function renderTest(){
+ let c=current.correct;
+ app.innerHTML=`<div class="top"><button class="secondary" onclick="menu()">← 中止</button><span>第${pos+1}/30問　残り <b id="timer">5</b>秒</span></div>
+ <div class="progress"><div class="bar" style="width:${pos/30*100}%"></div></div>
+ <div class="card"><div class="q">${esc(c.en)}</div><div class="opts">${current.opts.map((o,i)=>`<button class="opt" onclick="answerTest(${i})">${esc(o.ja)}</button>`).join("")}</div></div>`;
+}
+function answerTest(i){
+ if(locked)return;locked=true;clearInterval(timer);answered++;
+ let ok=i>=0&&current.opts[i].en===current.correct.en;if(ok)score++;else if(!historyWrong.includes(current.correct.en))historyWrong.push(current.correct.en);
+ save();pos++;setTimeout(testNext,80);
+}
+function testResult(){
+ clearInterval(timer);let pct=Math.round(score/30*100);
+ app.innerHTML=`<div class="card result"><h2>テスト終了</h2><div class="big">${score} / 30</div><p>${pct}%</p>
+ <button onclick="startTest()">もう一度</button> <button class="secondary" onclick="menu()">メニューへ</button></div>`;
+}
+function checkWords(){
+ let set=new Set([...checked,...historyWrong]);
+ let arr=[...set].map(k=>({key:k,item:k.startsWith("hard:")?HARD_VOCAB.find(x=>x.en===k.slice(5)):byEn(k)})).filter(x=>x.item);
+ app.innerHTML=`<div class="top"><button class="secondary" onclick="menu()">← メニュー</button><b>要チェックワード集</b></div>
+ <div class="card"><div class="small">★自分でチェック：${checked.length}語 ／ 間違い履歴：${historyWrong.length}語</div>
+ ${arr.length?arr.map(({key:k,item:x})=>`<div class="wordrow"><div><span class="en">${esc(x.en)}</span><div class="small">${esc(x.ja)}</div></div><button class="star checked" onclick="if(checked.includes('${k}'))checked.splice(checked.indexOf('${k}'),1);else checked.push('${k}');save();checkWords()">★</button></div>`).join(""):`<p>まだありません。練習モードで★を付けたり、間違えたりするとここに追加されます。</p>`}</div>
+ <button class="secondary" onclick="if(confirm('間違い履歴を消しますか？')){historyWrong=[];save();checkWords()}">間違い履歴をリセット</button>`;
+}
+menu();
+</script>
+</body>
+</html>
