@@ -156,41 +156,61 @@ function answerHardPractice(i){
 }
 function toggleHardCheck(en){let key="hard:"+en,i=checked.indexOf(key);if(i>=0)checked.splice(i,1);else checked.push(key);save();if(mode==="hard")renderHardPractice();}
 
+
 let flashTimer=null,flashQueue=[],flashPos=0,flashSeconds=3,flashRunning=true,flashAutoSpeak=true;
 function allFlashWords(){
- const a=(typeof VOCAB!=="undefined"?VOCAB:[]).slice(),b=(typeof HARD_VOCAB!=="undefined"?HARD_VOCAB:[]).slice();
- const s=new Set(),r=[];[...a,...b].forEach(x=>{if(x&&!s.has(x.en)){s.add(x.en);r.push(x)}});return r;
+ const a=(typeof VOCAB!=="undefined"&&Array.isArray(VOCAB))?VOCAB.slice():[];
+ const b=(typeof HARD_VOCAB!=="undefined"&&Array.isArray(HARD_VOCAB))?HARD_VOCAB.slice():[];
+ const seen=new Set(),r=[];
+ [...a,...b].forEach(x=>{if(x&&x.en&&!seen.has(x.en)){seen.add(x.en);r.push(x)}});
+ return r;
 }
-function startFlashMode(){mode="flash";clearTimeout(flashTimer);flashQueue=shuffle(allFlashWords());flashPos=0;flashSeconds=3;flashRunning=true;renderFlash();scheduleFlash()}
+function startFlashMode(){
+ mode="flash";clearTimeout(flashTimer);
+ if("speechSynthesis"in window)speechSynthesis.cancel();
+ flashQueue=shuffle(allFlashWords());flashPos=0;flashSeconds=3;flashRunning=true;flashAutoSpeak=true;
+ renderFlash();scheduleFlash();
+}
 function scheduleFlash(){clearTimeout(flashTimer);if(flashRunning)flashTimer=setTimeout(flashNext,flashSeconds*1000)}
-function flashNext(){clearTimeout(flashTimer);flashPos++;if(flashPos>=flashQueue.length){flashQueue=shuffle(allFlashWords());flashPos=0}renderFlash();scheduleFlash()}
-function renderFlash(){
- const x=flashQueue[flashPos],ipa=(typeof HARD_IPA!=="undefined"?HARD_IPA[x.en]:"")||"",ck=checked.includes(x.en)||checked.includes("hard:"+x.en);
- app.innerHTML=`<div class="top"><button class="secondary" onclick="stopFlash();menu()">← メニュー</button><span class="small">${flashPos+1}/${flashQueue.length}</span></div>
- <div class="card flash-card"><div class="tag">${flashSeconds}秒ごとに自動切替</div><div class="flash-word">${esc(x.en)}</div><div class="flash-meaning">${esc(x.ja)}</div><div class="flash-ipa">${esc(ipa)}</div>
- <div class="flash-controls"><button onclick="speakFlash()">🔊 発音</button><button onclick="toggleAutoSpeak()">${flashAutoSpeak?"🔊 自動読み上げON":"🔇 自動読み上げOFF"}</button><button onclick="toggleFlashPause()">${flashRunning?"⏸ 一時停止":"▶ 再開"}</button><button onclick="flashNext()">次へ →</button><button class="star ${ck?"checked":""}" onclick="toggleFlashCheck('${x.en}')">${ck?"★":"☆"}</button></div>
- <div class="flash-controls"><button onclick="setFlashSeconds(3)">3秒</button><button onclick="setFlashSeconds(5)">5秒</button><button onclick="setFlashSeconds(10)">10秒</button></div>
- <div class="flash-status">5セクションを一周するまで重複なし。終わると再シャッフル。</div></div>`;
+function flashNext(){
+ clearTimeout(flashTimer);
+ if("speechSynthesis"in window)speechSynthesis.cancel();
+ flashPos++;
+ if(flashPos>=flashQueue.length){flashQueue=shuffle(allFlashWords());flashPos=0}
+ renderFlash();scheduleFlash();
+}
+function representativeMeaning(ja){return String(ja||"").split(/[、，,／\/・]/)[0].replace(/[（(].*?[）)]/g,"").trim()}
+function speakFlash(){
+ const x=flashQueue[flashPos];if(!x||!("speechSynthesis"in window))return;
+ speechSynthesis.cancel();
+ const en=new SpeechSynthesisUtterance(x.en);en.lang="en-US";en.rate=.85;
+ const ja=new SpeechSynthesisUtterance(representativeMeaning(x.ja));ja.lang="ja-JP";ja.rate=1;
+ en.onend=function(){speechSynthesis.speak(ja)};speechSynthesis.speak(en);
 }
 function toggleAutoSpeak(){
  flashAutoSpeak=!flashAutoSpeak;
- if(!flashAutoSpeak && "speechSynthesis" in window) speechSynthesis.cancel();
+ if(!flashAutoSpeak&&"speechSynthesis"in window)speechSynthesis.cancel();
  renderFlash();
- if(flashAutoSpeak) setTimeout(speakFlash,100);
 }
-function representativeMeaning(ja){
- return String(ja||"").split(/[、，,／\/・]/)[0].replace(/[（(].*?[）)]/g,"").trim();
+function renderFlash(){
+ const x=flashQueue[flashPos];if(!x)return;
+ const ipa=(typeof HARD_IPA!=="undefined"&&HARD_IPA[x.en])?HARD_IPA[x.en]:"";
+ const ck=checked.includes(x.en)||checked.includes("hard:"+x.en);
+ app.innerHTML=`<div class="top"><button class="secondary" onclick="stopFlash();menu()">← メニュー</button><span class="small">${flashPos+1}/${flashQueue.length}</span></div>
+ <div class="card flash-card"><div class="tag">自動切替：${flashSeconds}秒</div>
+ <div class="flash-word">${esc(x.en)}</div><div class="flash-meaning">${esc(x.ja)}</div><div class="flash-ipa">${esc(ipa)}</div>
+ <div class="flash-controls"><button onclick="speakFlash()">🔊 発音</button><button onclick="toggleAutoSpeak()">${flashAutoSpeak?"🔊 自動読み上げON":"🔇 自動読み上げOFF"}</button><button onclick="toggleFlashPause()">${flashRunning?"⏸ 一時停止":"▶ 再開"}</button><button onclick="flashNext()">次へ →</button><button class="star ${ck?"checked":""}" onclick="toggleFlashCheck('${x.en}')">${ck?"★":"☆"}</button></div>
+ <div class="flash-controls"><button onclick="setFlashSeconds(1)">1秒</button><button onclick="setFlashSeconds(2)">2秒</button><button onclick="setFlashSeconds(3)">3秒</button><button onclick="setFlashSeconds(5)">5秒</button><button onclick="setFlashSeconds(10)">10秒</button><button onclick="setFlashSeconds(15)">15秒</button></div>
+ <div class="flash-status">5セクションを一周するまで重複なし。終わると再シャッフル。</div></div>`;
+ if(flashAutoSpeak)setTimeout(speakFlash,250);
 }
-function speakFlash(){
- const x=flashQueue[flashPos];
- if(!x || !("speechSynthesis" in window))return;
- speechSynthesis.cancel();
- const en=new SpeechSynthesisUtterance(x.en);
- en.lang="en-US"; en.rate=.85;
- const ja=new SpeechSynthesisUtterance(representativeMeaning(x.ja));
- ja.lang="ja-JP"; ja.rate=1.0;
- en.onend=()=>speechSynthesis.speak(ja);
- speechSynthesis.speak(en);
+function toggleFlashPause(){flashRunning=!flashRunning;clearTimeout(flashTimer);if(!flashRunning&&"speechSynthesis"in window)speechSynthesis.cancel();renderFlash();if(flashRunning)scheduleFlash()}
+function setFlashSeconds(n){flashSeconds=n;clearTimeout(flashTimer);renderFlash();if(flashRunning)scheduleFlash()}
+function toggleFlashCheck(en){const key=checked.includes("hard:"+en)?"hard:"+en:en,i=checked.indexOf(key);if(i>=0)checked.splice(i,1);else checked.push(key);save();renderFlash()}
+function stopFlash(){clearTimeout(flashTimer);if("speechSynthesis"in window)speechSynthesis.cancel();flashRunning=false}
+
+function startPractice(){
+ mode="practice"; queue=shuffle(VOCAB);pos=0;score=0;answered=0;nextPractice();
 }
 function nextPractice(){
  if(pos>=queue.length){queue=shuffle(VOCAB);pos=0;}
